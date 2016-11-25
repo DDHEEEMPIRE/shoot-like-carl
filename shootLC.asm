@@ -32,7 +32,7 @@ local reset_bugs, reset_grnds, again1, again2
   lea di, ptime
   mov [di], ch
   mov [di+1], cl
-  mov [di+2], dl
+  mov [di+2], dh
   mov score, 0
   lea di, bugs
   mov cx, 4        
@@ -74,11 +74,19 @@ endm
 ;-------view-------------------------------------
 ;clear screen
 clr_scr macro
+  push ax
+  push bx
+  push cx
+  push dx
   mov ax, 0600h
   mov bh, 07
   mov cx, 0
   mov dx, 184fh
   int 10h
+  pop dx
+  pop cx
+  pop bx
+  pop ax
 endm
 
 ;display string
@@ -143,27 +151,27 @@ endm
 
 ;refresh view
 refresh macro
-local draw_bugs, draw_grnds, grndgrnds, bugbugs, no_bugs, no_grnds, grnds_over, bugs_over, bugs_body
+local draw_bugs, draw_grnds, grndgrnds, bugbugs, no_bugs, no_grnds, grnds_over, bugs_over, bug_body
   ;get time
   mov ah, 2ch
   int 21h
   lea di, ctime
   mov [di], ch
   mov [di+1], cl
-  mov [di+2], dl
+  mov [di+2], dh
   mov ax, 0
   lea si, ptime
   lea di, ctime
-  add ax, [si]
-  sub ax, [di]
+  add ax, [di]
+  sub ax, [si]
   mov bl, 60
   mul bl
-  add ax, [si+1]
-  sub ax, [di+1]
+  add ax, [di+1]
+  sub ax, [si+1]
   mov bl, 60
   mul bl
-  add ax, [si+2]
-  sub ax, [di+2]
+  add ax, [di+2]
+  sub ax, [si+2]
   mov time, al
   
   cursor 1, 5
@@ -223,24 +231,60 @@ local draw_bugs, draw_grnds, grndgrnds, bugbugs, no_bugs, no_grnds, grnds_over, 
     jnz bugbugs
 
 ;draw RPG
-  cursor 21, rpg
+  cursor 21, 10     ;left edge
+  draw ' '
+  cursor 22, 10
+  draw ' '
+  cursor 21, 11 
+  draw ' '
+  cursor 22, 11
+  draw ' '
+  cursor 21, 12
+  draw ' '
+  cursor 22, 12
+  draw ' '
+  cursor 21, 67     ;right edge
+  draw ' '
+  cursor 22, 67
+  draw ' '
+  cursor 21, 68 
+  draw ' '
+  cursor 22, 68
+  draw ' '
+  cursor 21, 69
+  draw ' '
+  cursor 22, 69
+  draw ' '
+  cursor 21, rpg    ;center
   draw '-'
+  cursor 22, rpg
+  draw ' '
   mov bl, rpg
   dec bl
-  cursor 21, bl
+  cursor 21, bl     ;center-1
+  draw '.'
+  cursor 22, bl
+  draw '|'
+  dec bl
+  cursor 21, bl     ;center-2
+  draw ' '
+  cursor 22, bl
+  draw ' '
+  mov bl, rpg
+  inc bl
+  cursor 21, bl     ;center+1
   draw '.'
   cursor 22, bl
   draw '|'
   inc bl
-  inc bl
-  cursor 21, bl 
-  draw '.'
+  cursor 21, bl     ;center+2
+  draw ' '
   cursor 22, bl
-  draw '|'
+  draw ' '
 
-
+;  ret
+;refresh endp
 endm
-
 
 
 
@@ -253,7 +297,31 @@ endm
 
 ;forward grenades
 fwd_grnds macro
-
+local forward_grands, lastrowofgrnds
+  push di
+  push si
+  push cx
+  push ax
+  lea di, grnds
+  lea si, grnds
+  add si, 58
+  mov cx, 522
+  forward_grnds:
+    mov ax, [si]
+    mov [di], ax
+    inc si
+    inc di
+    loop forward_grnds
+  mov cx, 58
+  lastrowofgrnds:
+    mov ax, 0
+    mov [si], ax
+    inc si
+    loop lastrowofgrnds
+  pop ax
+  pop cx
+  pop si
+  pop di
 endm
 
 ;judge and count if present grenades hit
@@ -261,7 +329,54 @@ judge macro
 
 endm
 
+;10-68
+;move rpg to the left
+left_rpg macro
+local outofleftedge, out1
+  push ax
+  mov al, rpg
+  cmp al, 11
+  jz  outofleftedge
+  dec al
+  jmp out1
+  outofleftedge:
+  mov al, 68
+  out1:
+  mov rpg, al
+  pop ax
+endm
 
+;move rpg to the right
+right_rpg macro
+local outofrightedge, out2
+  push ax
+  mov al, rpg
+  cmp al, 68
+  jz  outofrightedge
+  inc al
+  jmp out2
+  outofrightedge:
+  mov al, 11
+  out2:
+  mov rpg, al
+  pop ax
+endm
+
+;fire one grenade
+fire_rpg macro
+  push di
+  push bx
+  push dx
+  mov bh, 0
+  mov bl, rpg
+  lea di, grnds
+  add di, 511
+  mov dl, 1
+  mov [di+bx], dl
+  pop dx
+  pop bx
+  pop di
+endm
 
 
 ;-----------------------------------------------
@@ -279,28 +394,97 @@ main proc far
 
   ;wait for operation
   waittostart:
-    mov ah, 01
-    int 16h
-    jz  waittostart
-    mov ah, 0
-    int 16h
-    cmp al, 'Q'
-    je  exit
-    cmp al, 'q'
-    je  exit
-    cmp al, 'S'
-    je  starto
-    cmp al, 's'
-    je  starto
-    jmp waittostart
+  mov ah, 01
+  int 16h
+  jz  waittostart
+  mov ah, 0
+  int 16h
+  cmp al, 'Q'
+  je  exit
+  cmp al, 'q'
+  je  exit
+  cmp al, 'S'
+  je  starto
+  cmp al, 's'
+  je  starto
+  jmp waittostart
 
   starto:
-    init
-    
+  init
+  
+  mov cx, 3000
+  running:
+
+            mov ax, 1000  ;speed: 1000ms
+            mov cx, 66    ;1ms = 66 * 15.085 \mu s
+            mul cx
+            mov cx, ax
+            L1:           ;delay 1000ms
+              push ax
+              pop ax
+              in al, 61h
+              and al, 10h
+
+              push ax
+              mov ah, 01
+              int 16h
+              jnz operated
+              pop ax
+              
+              continue_delay:
+              cmp al, ah
+              je L1
+              mov ah, al
+              loop L1
+
+
+            fwd_bugs
+            fwd_grnds
+            judge
+            refresh
+            jmp running
+            
+
+
+                                                  operated:
+                                                  push ax
+                                                  mov ah, 0
+                                                  int 16h
+                                                  cmp ah, 4bh
+                                                  jz  rpg_left
+                                                  cmp ah, 4dh
+                                                  jz  rpg_right
+                                                  cmp al, ' '
+                                                  jz  rpg_fire
+                                                  cmp al, 'q'
+                                                  jz  exit
+                                                  cmp al, 'Q'
+                                                  jz  exit
+                                                  jmp continue_delay
+                                                  rpg_left:
+                                                  left_rpg
+                                                  refresh
+                                                  pop ax
+                                                  jmp continue_delay
+                                                  rpg_right:
+                                                  right_rpg
+                                                  refresh
+                                                  pop ax
+                                                  jmp continue_delay
+                                                  rpg_fire:
+                                                  fire_rpg
+                                                  refresh
+                                                  pop ax
+                                                  jmp continue_delay
+
+
+
+
+
 
   exit:
-    mov ax, 4c00h
-    int 21h
+  mov ax, 4c00h
+  int 21h
 main endp
   end main
 
