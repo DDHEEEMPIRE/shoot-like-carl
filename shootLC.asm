@@ -18,9 +18,10 @@ ctime db ?, ?, ?  ;hours, minutes, seconds
 time  db ?        ;in minutes
 rpg   db ?        ;position of RPG (10-68, taking up 3 characters)
 score db ?
-bugs  db 4 dup(60 dup(?))
-grnds db 10 dup(58 dup(?))
-
+bugs  db 5  dup(60 dup(?))
+grnds db 17 dup(58 dup(?))
+bugs_generator_count db ?
+bugs_mover_count    db ?
 
 ;-----------------------------------------------
 ;initialize game
@@ -34,9 +35,11 @@ local reset_bugs, reset_grnds, again1, again2
   mov [di+1], cl
   mov [di+2], dh
   mov score, 0
+  mov bugs_generator_count, 24
+  mov bugs_mover_count, 4
   lea di, bugs
-  mov cx, 4        
-  ;4 rows of bugs
+  mov cx, 5        
+  ;5 rows of bugs
   reset_bugs:
     mov ax, 60       
     ;60 bugs for each row
@@ -48,8 +51,8 @@ local reset_bugs, reset_grnds, again1, again2
       jnz again1
     loop reset_bugs
     lea di, grnds
-    mov cx, 10       
-  ;10 rows of grenades
+    mov cx, 17       
+  ;17 rows of grenades
   reset_grnds:
     mov ax, 58       
     ;58 grenades for each row
@@ -183,8 +186,8 @@ local draw_bugs, draw_grnds, grndgrnds, bugbugs, no_bugs, no_grnds, grnds_over, 
 
 ;draw grenades
   lea si, grnds
-  mov bh, 10
-  mov bl, 3
+  mov bh, 16
+  mov bl, 5
   grndgrnds:
     mov cx, 58
     cursor bl, 11
@@ -205,8 +208,8 @@ local draw_bugs, draw_grnds, grndgrnds, bugbugs, no_bugs, no_grnds, grnds_over, 
 
 ;draw bugs
   lea si, bugs
-  mov bh, 4
-  mov bl, 3
+  mov bh, 5
+  mov bl, 5
   bugbugs:
     mov cx, 60
     cursor bl, 10
@@ -292,12 +295,76 @@ endm
 ;-------every loop-------------------------------
 ;forward bugs
 fwd_bugs macro
-
+local forward_bug_lines, forward_bugs, bugs_mover_test, bugs_generator, bugs_mover, bugs_over
+  push cx
+  push ax
+  push dx
+  push di
+  push si
+    cursor 0, 0
+    numeral cl
+  dec bugs_generator_count
+  dec bugs_mover_count
+  cmp bugs_generator_count, 0
+  jz  bugs_generator
+  bugs_mover_test:
+  cmp bugs_mover_count, 0
+  jz  bugs_mover
+  jmp bugs_over
+  ;when bugs_generator_count equals 0, generate a random bug
+  bugs_generator:
+    ;get random line
+    mov ah, 2ch
+    int 21h
+    mov ax, dx
+    mov bl, 5
+    div bl
+    mov cl, ah
+    ;generate a new bug
+    mov ax, 60
+    inc cl
+    mul cl
+    dec ax
+    lea di, bugs
+    add di, ax
+    mov al, 1
+    mov [di], al
+    dec di
+    mov [di], al
+    dec di
+    mov al, 2
+    mov [di], al
+    mov bugs_generator_count, 24
+    jmp bugs_mover_test
+  ;when bugs_mover_count equals 0, move all bugs forward
+  bugs_mover:
+    lea di, bugs
+    mov cx, 5
+    forward_bug_lines:
+      push cx
+      mov cx, 59
+      forward_bugs:
+        mov ax, [di+1]
+        mov [di], ax
+        inc di
+        loop forward_bugs
+      mov ax, 0
+      mov [di], ax
+      inc di
+      pop cx
+      loop forward_bug_lines
+      mov bugs_mover_count, 4
+  bugs_over:
+  pop si
+  pop di
+  pop dx
+  pop ax
+  pop cx
 endm
 
 ;forward grenades
 fwd_grnds macro
-local forward_grands, lastrowofgrnds
+local forward_grnds, lastrowofgrnds
   push di
   push si
   push cx
@@ -305,7 +372,7 @@ local forward_grands, lastrowofgrnds
   lea di, grnds
   lea si, grnds
   add si, 58
-  mov cx, 522
+  mov cx, 928
   forward_grnds:
     mov ax, [si]
     mov [di], ax
@@ -315,8 +382,8 @@ local forward_grands, lastrowofgrnds
   mov cx, 58
   lastrowofgrnds:
     mov ax, 0
-    mov [si], ax
-    inc si
+    mov [di], ax
+    inc di
     loop lastrowofgrnds
   pop ax
   pop cx
@@ -370,7 +437,7 @@ fire_rpg macro
   mov bh, 0
   mov bl, rpg
   lea di, grnds
-  add di, 511
+  add di, 917
   mov dl, 1
   mov [di+bx], dl
   pop dx
@@ -414,68 +481,66 @@ main proc far
   
   mov cx, 3000
   running:
-
-            mov ax, 1000  ;speed: 1000ms
-            mov cx, 66    ;1ms = 66 * 15.085 \mu s
-            mul cx
-            mov cx, ax
-            L1:           ;delay 1000ms
-              push ax
-              pop ax
-              in al, 61h
-              and al, 10h
-
-              push ax
-              mov ah, 01
-              int 16h
-              jnz operated
-              pop ax
-              
-              continue_delay:
-              cmp al, ah
-              je L1
-              mov ah, al
-              loop L1
-
-
-            fwd_bugs
-            fwd_grnds
-            judge
-            refresh
-            jmp running
-            
-
-
-                                                  operated:
-                                                  push ax
-                                                  mov ah, 0
-                                                  int 16h
-                                                  cmp ah, 4bh
-                                                  jz  rpg_left
-                                                  cmp ah, 4dh
-                                                  jz  rpg_right
-                                                  cmp al, ' '
-                                                  jz  rpg_fire
-                                                  cmp al, 'q'
-                                                  jz  exit
-                                                  cmp al, 'Q'
-                                                  jz  exit
-                                                  jmp continue_delay
-                                                  rpg_left:
-                                                  left_rpg
-                                                  refresh
-                                                  pop ax
-                                                  jmp continue_delay
-                                                  rpg_right:
-                                                  right_rpg
-                                                  refresh
-                                                  pop ax
-                                                  jmp continue_delay
-                                                  rpg_fire:
-                                                  fire_rpg
-                                                  refresh
-                                                  pop ax
-                                                  jmp continue_delay
+    mov ax, 0fffh  ;speed
+    mov cx, 66 
+    mul cx
+    mov cx, ax
+    L1:           
+      in al, 61h
+      and al, 10h
+      push ax
+      mov ah, 01
+      int 16h
+      jnz operated 
+      continue_delay:
+      pop ax        
+      cmp al, ah
+      je L1
+      mov ah, al
+      loop L1
+    fwd_bugs
+    fwd_grnds
+    judge
+    refresh
+    jmp running
+          operated:
+                          fwd_bugs
+                          fwd_grnds
+                          judge
+                          refresh
+          push ax
+          mov ah, 0
+          int 16h
+          cmp ah, 4bh
+          jz  rpg_left
+          cmp ah, 4dh
+          jz  rpg_right
+          cmp al, ' '
+          jz  rpg_fire
+          cmp al, 'q'
+          jz  exit
+          cmp al, 'Q'
+          jz  exit
+          mov cx, 0
+          jmp continue_delay
+          rpg_left:
+          left_rpg
+          refresh
+          pop ax
+          mov cx, 0
+          jmp continue_delay
+          rpg_right:
+          right_rpg
+          refresh
+          pop ax
+          mov cx, 0
+          jmp continue_delay
+          rpg_fire:
+          fire_rpg
+          refresh
+          pop ax
+          mov cx, 0
+          jmp continue_delay
 
 
 
