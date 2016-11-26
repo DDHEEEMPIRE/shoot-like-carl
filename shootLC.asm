@@ -1,6 +1,6 @@
 ;-----enabling you to shoot like Carl, in your dreams--------------------------
 
-.model small
+.model large
 ;-----------------------------------------------
 .data
 ;welcome
@@ -20,8 +20,10 @@ rpg   db ?        ;position of RPG (10-68, taking up 3 characters)
 score db ?
 bugs  db 5  dup(60 dup(?))
 grnds db 17 dup(58 dup(?))
+hhh   db 10 dup(0)
 bugs_generator_count db ?
 bugs_mover_count    db ?
+                                                                            debug db 1
 
 ;-----------------------------------------------
 ;initialize game
@@ -35,8 +37,8 @@ local reset_bugs, reset_grnds, again1, again2
   mov [di+1], cl
   mov [di+2], dh
   mov score, 0
-  mov bugs_generator_count, 24
-  mov bugs_mover_count, 4
+  mov bugs_generator_count, 48
+  mov bugs_mover_count, 3
   lea di, bugs
   mov cx, 5        
   ;5 rows of bugs
@@ -132,24 +134,32 @@ endm
 ;display numeral
 numeral macro nume
 local push_htol, pop_ltoh
+  push ax
+  push bx
+  push cx
+  push dx
   mov ah, 0
   mov al, nume
   mov bx, 10
   mov cx, 0
-push_htol:
-  mov dx, 0
-  div bx
-  push dx
-  inc cx
-  cmp ax, 0
-  jnz push_htol
-pop_ltoh:
+  push_htol:
+    mov dx, 0
+    div bx
+    push dx
+    inc cx
+    cmp ax, 0
+    jnz push_htol
+  pop_ltoh:
+    pop dx
+    add dx, '0'
+    mov ah, 02
+    int 21h
+    dec cx
+    jnz pop_ltoh
   pop dx
-  add dx, '0'
-  mov ah, 02
-  int 21h
-  dec cx
-  jnz pop_ltoh
+  pop cx
+  pop bx
+  pop ax
 endm
 
 ;refresh view
@@ -301,40 +311,35 @@ local forward_bug_lines, forward_bugs, bugs_mover_test, bugs_generator, bugs_mov
   push dx
   push di
   push si
-    cursor 0, 0
-    numeral cl
   dec bugs_generator_count
-  dec bugs_mover_count
-  cmp bugs_generator_count, 0
-  jz  bugs_generator
+  jnz bugs_mover_test
+  jmp bugs_generator
   bugs_mover_test:
-  cmp bugs_mover_count, 0
-  jz  bugs_mover
-  jmp bugs_over
+  dec bugs_mover_count
+  jnz bugs_over
+  jmp bugs_mover
   ;when bugs_generator_count equals 0, generate a random bug
   bugs_generator:
     ;get random line
     mov ah, 2ch
     int 21h
-    mov ax, dx
+    mov al, dl
+    mov ah, 0
     mov bl, 5
     div bl
-    mov cl, ah
     ;generate a new bug
+    mov cl, ah
     mov ax, 60
-    inc cl
     mul cl
-    dec ax
+    add ax, 57
     lea di, bugs
     add di, ax
-    mov al, 1
-    mov [di], al
-    dec di
-    mov [di], al
-    dec di
-    mov al, 2
-    mov [di], al
-    mov bugs_generator_count, 24
+    mov dl, 2
+    mov [di], dl
+    mov dl, 1
+    mov [di+1], dl
+    mov [di+2], dl
+    mov bugs_generator_count, 48
     jmp bugs_mover_test
   ;when bugs_mover_count equals 0, move all bugs forward
   bugs_mover:
@@ -353,7 +358,7 @@ local forward_bug_lines, forward_bugs, bugs_mover_test, bugs_generator, bugs_mov
       inc di
       pop cx
       loop forward_bug_lines
-      mov bugs_mover_count, 4
+      mov bugs_mover_count, 3
   bugs_over:
   pop si
   pop di
@@ -393,7 +398,52 @@ endm
 
 ;judge and count if present grenades hit
 judge macro
-
+local clear_row, clear_bugs, nothing_happens_here, clearbng
+  push ax
+  push bx
+  push cx
+  push dx
+  lea si, grnds
+  lea di, bugs
+  mov cx, 5
+  clear_row:
+    push cx
+    inc di
+    mov cx, 58
+    clear_bugs:
+      mov ah, [di]
+      mov al, [si]
+      cmp al, 1
+      jnz nothing_happens_here
+      cmp ah, 0
+      jz nothing_happens_here
+      ;hit bug
+      mov dl, score
+      add dl, 3
+      cmp ah, 1
+      jz clearbng
+      ;hit jackpot
+      add dl, 2
+      clearbng:
+      mov score, dl
+      mov dl, 0
+      mov [si], dl
+      mov [di], dl
+      mov [di+1], dl
+      mov [di+2], dl
+      mov [di-1], dl
+      mov [di-2], dl
+      nothing_happens_here:
+      inc di
+      inc si
+      loop clear_bugs
+    inc di
+    pop cx
+    loop clear_row
+  pop dx
+  pop cx
+  pop bx
+  pop ax
 endm
 
 ;10-68
@@ -503,50 +553,44 @@ main proc far
     judge
     refresh
     jmp running
-          operated:
-                          fwd_bugs
-                          fwd_grnds
-                          judge
-                          refresh
-          push ax
-          mov ah, 0
-          int 16h
-          cmp ah, 4bh
-          jz  rpg_left
-          cmp ah, 4dh
-          jz  rpg_right
-          cmp al, ' '
-          jz  rpg_fire
-          cmp al, 'q'
-          jz  exit
-          cmp al, 'Q'
-          jz  exit
-          mov cx, 0
-          jmp continue_delay
-          rpg_left:
-          left_rpg
-          refresh
-          pop ax
-          mov cx, 0
-          jmp continue_delay
-          rpg_right:
-          right_rpg
-          refresh
-          pop ax
-          mov cx, 0
-          jmp continue_delay
-          rpg_fire:
-          fire_rpg
-          refresh
-          pop ax
-          mov cx, 0
-          jmp continue_delay
-
-
-
-
-
-
+      operated:
+      fwd_bugs
+      fwd_grnds
+      judge
+      refresh
+      push ax
+      mov ah, 0
+      int 16h
+      cmp ah, 4bh
+      jz  rpg_left
+      cmp ah, 4dh
+      jz  rpg_right
+      cmp al, ' '
+      jz  rpg_fire
+      cmp al, 'q'
+      jz  exit
+      cmp al, 'Q'
+      jz  exit
+      mov cx, 0
+      jmp continue_delay
+      rpg_left:
+      left_rpg
+      refresh
+      pop ax
+      mov cx, 0
+      jmp continue_delay
+      rpg_right:
+      right_rpg
+      refresh
+      pop ax
+      mov cx, 0
+      jmp continue_delay
+      rpg_fire:
+      fire_rpg
+      refresh
+      pop ax
+      mov cx, 0
+      jmp continue_delay
   exit:
   mov ax, 4c00h
   int 21h
