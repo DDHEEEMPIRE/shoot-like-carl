@@ -4,10 +4,10 @@
 ;-----------------------------------------------
 .data
 ;welcome
-string_hints db "              Press direction keys to move your RPG", 13, 10
-             db "              Press blank space to shoot", 13, 10
-             db "              Press s to start", 13, 10
-             db "              Press q to quit", 13, 10
+string_hints db "                     Press direction keys to move your RPG", 13, 10
+             db "                     Press blank space to shoot", 13, 10
+             db "                     Press s to start", 13, 10
+             db "                     Press q to quit", 13, 10
              db '$'
 prompt_s     db "SCORE: ",'$'
 prompt_t     db "TIME: ",'$'
@@ -23,7 +23,9 @@ grnds db 17 dup(58 dup(?))
 hhh   db 10 dup(0)
 bugs_generator_count db ?
 bugs_mover_count    db ?
-                                                                            debug db 1
+grenades_left db ?
+prompt_g      db "AMMO: ",'$'
+flipflop db 0
 
 ;-----------------------------------------------
 ;initialize game
@@ -39,6 +41,7 @@ local reset_bugs, reset_grnds, again1, again2
   mov score, 0
   mov bugs_generator_count, 48
   mov bugs_mover_count, 3
+  mov grenades_left, 10
   lea di, bugs
   mov cx, 5        
   ;5 rows of bugs
@@ -164,7 +167,7 @@ endm
 
 ;refresh view
 refresh macro
-local draw_bugs, draw_grnds, grndgrnds, bugbugs, no_bugs, no_grnds, grnds_over, bugs_over, bug_body
+local drawbng, draw_bugs1, bug_body1, no_bugs1, bugs_over1, drawbng0, bug_body, no_bugs, no_grnds, bng_over, draw_bugs2, bug_body2, no_bugs2, bugs_over2, drawrestofgs, draw_restofgs, no_restofgs, restofgs_over 
   ;get time
   mov ah, 2ch
   int 21h
@@ -186,62 +189,104 @@ local draw_bugs, draw_grnds, grndgrnds, bugbugs, no_bugs, no_grnds, grnds_over, 
   add ax, [di+2]
   sub ax, [si+2]
   mov time, al
-  
+
   cursor 1, 5
   display prompt_s
   numeral score
   cursor 1, 60
   display prompt_t
   numeral time
+  cursor 1, 33
+  display prompt_g
+  numeral grenades_left
+  draw ' '
 
-;draw grenades
+;draw bugs and grenades
+  lea di, bugs
   lea si, grnds
-  mov bh, 16
   mov bl, 5
-  grndgrnds:
+  mov cx, 5
+  drawbng:
+    push cx
+    cursor bl, 10
+    draw_bugs1:
+      mov dl, [di]
+      cmp dl, 0
+      jz  no_bugs1
+      cmp dl, 1
+      jz  bug_body1
+      draw 2
+      jmp bugs_over1
+      bug_body1:
+        draw 3
+        jmp bugs_over1
+      no_bugs1:
+        draw ' '
+      bugs_over1:
+      inc di
     mov cx, 58
-    cursor bl, 11
-    draw_grnds:
+    drawbng0:
       mov dl, [si]
+      mov dh, [di]
+      cmp dh, 0
+      jz no_bugs
+      cmp dh, 1
+      jz  bug_body
+      draw 2
+      jmp bng_over
+      bug_body:
+      draw 3
+      jmp bng_over
+      no_bugs:
       cmp dl, 0
       jz  no_grnds
       draw 'o'
-      jmp grnds_over
+      jmp bng_over
       no_grnds:
-        draw ' '
-      grnds_over:
+      draw ' '  
+      bng_over:
+      inc di
       inc si
-      loop draw_grnds
+      loop drawbng0
+    draw_bugs2:
+      mov dl, [di]
+      cmp dl, 0
+      jz  no_bugs2
+      cmp dl, 1
+      jz  bug_body2
+      draw 2
+      jmp bugs_over2
+      bug_body2:
+        draw 3
+        jmp bugs_over2
+      no_bugs2:
+        draw ' '
+      bugs_over2:
     inc bl
-    dec bh
-    jnz grndgrnds
-
-;draw bugs
-  lea si, bugs
-  mov bh, 5
-  mov bl, 5
-  bugbugs:
-    mov cx, 60
-    cursor bl, 10
-    draw_bugs:
+    inc di
+    pop cx
+    dec cx
+    jnz drawbng
+  mov cx, 11
+  mov bl, 10
+  drawrestofgs:
+    push cx
+    mov cx, 58
+    cursor bl, 11
+    draw_restofgs:
       mov dl, [si]
       cmp dl, 0
-      jz  no_bugs
-      cmp dl, 1
-      jz  bug_body
-      draw 2
-      jmp bugs_over
-      bug_body:
-        draw 3
-        jmp bugs_over
-      no_bugs:
+      jz  no_restofgs
+      draw 'o'
+      jmp restofgs_over
+      no_restofgs:
         draw ' '
-      bugs_over:
-        inc si
-      loop draw_bugs
+      restofgs_over:
+      inc si
+      loop draw_restofgs
     inc bl
-    dec bh
-    jnz bugbugs
+    pop cx
+    loop drawrestofgs
 
 ;draw RPG
   cursor 21, 10     ;left edge
@@ -484,6 +529,7 @@ fire_rpg macro
   push di
   push bx
   push dx
+  dec grenades_left
   mov bh, 0
   mov bl, rpg
   lea di, grnds
@@ -501,19 +547,25 @@ endm
 main proc far
   mov ax, @data
   mov ds, ax
-
+  
   mov ah, 0
   mov al, 03h
   int 10h
+  ;wait for operation
+  waittostart:
   clr_scr
   cursor 15, 0
   display string_hints
-
-  ;wait for operation
-  waittostart:
+  mov al, flipflop
+  cmp al, 0
+  jz  first_time_discount
+  cursor 9, 33
+  display prompt_s
+  numeral score
+  first_time_discount:
   mov ah, 01
   int 16h
-  jz  waittostart
+  jz  first_time_discount
   mov ah, 0
   int 16h
   cmp al, 'Q'
@@ -524,9 +576,10 @@ main proc far
   je  starto
   cmp al, 's'
   je  starto
-  jmp waittostart
+  jmp first_time_discount
 
   starto:
+  mov flipflop, 1
   init
   
   mov cx, 3000
@@ -566,11 +619,19 @@ main proc far
       cmp ah, 4dh
       jz  rpg_right
       cmp al, ' '
+      mov ah, grenades_left
+      cmp ah, 0
+      jz  waittostart
+      cmp al, ' '
       jz  rpg_fire
+      cmp al, 'r'
+      jz  reload
+      cmp al, 'R'
+      jz  reload
       cmp al, 'q'
-      jz  exit
+      jz  waittostart
       cmp al, 'Q'
-      jz  exit
+      jz  waittostart
       mov cx, 0
       jmp continue_delay
       rpg_left:
@@ -590,6 +651,9 @@ main proc far
       refresh
       pop ax
       mov cx, 0
+      jmp continue_delay
+      reload:
+      mov grenades_left, 10
       jmp continue_delay
   exit:
   mov ax, 4c00h
