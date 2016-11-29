@@ -1,6 +1,11 @@
 ;-----enabling you to shoot like Carl, in your dreams--------------------------
-
-.model large
+public ptime
+public ctime
+public time
+extrn reset_time: near
+extrn peek_time: near
+.model small
+.stack 64
 ;-----------------------------------------------
 .data
 ;welcome
@@ -32,12 +37,7 @@ flipflop db 0
 init macro
 local reset_bugs, reset_grnds, again1, again2
   clr_scr
-  mov ah, 2ch
-  int 21h
-  lea di, ptime
-  mov [di], ch
-  mov [di+1], cl
-  mov [di+2], dh
+  call reset_time
   mov score, 0
   mov bugs_generator_count, 48
   mov bugs_mover_count, 3
@@ -168,28 +168,8 @@ endm
 ;refresh view
 refresh macro
 local drawbng, draw_bugs1, bug_body1, no_bugs1, bugs_over1, drawbng0, bug_body, no_bugs, no_grnds, bng_over, draw_bugs2, bug_body2, no_bugs2, bugs_over2, drawrestofgs, draw_restofgs, no_restofgs, restofgs_over 
-  ;get time
-  mov ah, 2ch
-  int 21h
-  lea di, ctime
-  mov [di], ch
-  mov [di+1], cl
-  mov [di+2], dh
-  mov ax, 0
-  lea si, ptime
-  lea di, ctime
-  add ax, [di]
-  sub ax, [si]
-  mov bl, 60
-  mul bl
-  add ax, [di+1]
-  sub ax, [si+1]
-  mov bl, 60
-  mul bl
-  add ax, [di+2]
-  sub ax, [si+2]
-  mov time, al
-
+  call peek_time
+  
   cursor 1, 5
   display prompt_s
   numeral score
@@ -548,9 +528,6 @@ main proc far
   mov ax, @data
   mov ds, ax
   
-  mov ah, 0
-  mov al, 03h
-  int 10h
   ;wait for operation
   waittostart:
   clr_scr
